@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import csv
+import time
 import json
 import requests
 
@@ -51,12 +53,14 @@ class DemonTweeksScraper(object):
         
         resp = self.session.get('https://www.demon-tweeks.com/rest/V1/vehicles/variants', params=self.params)
         data = resp.json()
-
+        
         print json.dumps(data, indent=2)
+        
+        return [ d['label'] for d in data ]
 
-        for v in data:
-            self.params['variantCode'] = v['label']
-            yield v['label']
+        # for v in data:
+        #    self.params['variantCode'] = v['label']
+        #    yield v['label']
 
     def vehicles(self):
         resp = self.session.get('https://www.demon-tweeks.com/rest/V1/vehicles/vehicle', params=self.params)
@@ -64,19 +68,48 @@ class DemonTweeksScraper(object):
 
         for v in data:
             yield v
-            
-    def scrape(self):
-        for make in self.makes():
-            print make
-            for model in self.models():
-                print model
-                for year in self.years():
-                    print year
-                    for variant in self.variants():
-                        print variant
-                        for vehicle in self.vehicles():
-                            print json.dumps(vehicle, indent=2)
 
+    def csv_save(self, data):
+        headers = [
+            'typeCode', 'makeCode', 'modelCode', 'year', 'variants'
+        ]
+        filename = 'demons-tweeks.csv'
+        
+        with open(filename, 'w') as fp:
+            writer = csv.writer(fp, quoting=csv.QUOTE_NONNUMERIC)
+            writer.writerow(headers)
+
+            for d in data:
+                row = [
+                    d.get(h) for h in headers
+                ]
+                
+                writer.writerow(row) 
+        
+    def scrape(self):
+        data = []
+        
+#        for typeCode in ['car', 'motorcycle']:
+        for typeCode in ['car']:
+            self.params['typeCode'] = typeCode
+            for make in self.makes():
+                print make
+                time.sleep(0.5)
+                for model in self.models():
+                    print model
+                    time.sleep(0.5)                    
+                    for year in self.years():
+                        print year
+                        time.sleep(0.5)
+                        d = self.params.copy()
+                        d['variants'] = '\n'.join( self.variants() )
+                        data.append(d)
+
+
+                break
+        
+        self.csv_save(data)
+        
 if __name__ == '__main__':
     scraper = DemonTweeksScraper()
     scraper.scrape()
