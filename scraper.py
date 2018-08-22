@@ -13,8 +13,10 @@ class DemonTweeksScraper(object):
         self.params = {}
 
     def makes(self):
-        self.params = {}        
-        self.params['typeCode'] = 'car'
+        self.params.pop('makeCode', None)
+        self.params.pop('modelCode', None)
+        self.params.pop('year', None)
+        self.params.pop('variantCode', None)
 
         resp = self.session.get('https://www.demon-tweeks.com/rest/V1/vehicles/makes', params=self.params)
         data = resp.json()
@@ -90,7 +92,7 @@ class DemonTweeksScraper(object):
         data = []
         
 #        for typeCode in ['car', 'motorcycle']:
-        for typeCode in ['car']:
+        for typeCode in ['motorcycle']:
             self.params['typeCode'] = typeCode
             for make in self.makes():
                 print make
