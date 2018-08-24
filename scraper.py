@@ -6,21 +6,61 @@ import json
 import requests
 
 from bs4 import BeautifulSoup
+from redis import StrictRedis
+from redis.exceptions import RedisError
+from rediscache import RedisCache
 
 class DemonTweeksScraper(object):
     def __init__(self):
         self.session = requests.Session()
         self.params = {}
+        self.init_cache()
 
+    def init_cache(self):
+        redis_config = {
+            'host': 'localhost',
+            'port': 6379,
+            'db': 0,
+            'password': 'foobared'
+        }
+
+        client = StrictRedis(**redis_config)
+        try:
+            client.ping()
+        except RedisError as ex:
+            self.logger.error('Error connecting to Redis: %s' % ex)
+            exit('Failed to connect to Redis, exiting...' )
+
+        self.cache = RedisCache(client=client)
+
+    def get(self, url, params):
+        url = requests.Request('GET', url, params=self.params).prepare().url
+
+        try:
+            text = self.cache[url]
+        except KeyError:
+            pass
+        else:
+            print 'Cached ', url
+            data = json.loads(text)
+            return data
+
+        time.sleep(0.5)
+        
+        resp = self.session.get(url, params=params)
+        data = resp.json()
+
+        self.cache[url] = resp.text
+        return data
+    
     def makes(self):
         self.params.pop('makeCode', None)
         self.params.pop('modelCode', None)
         self.params.pop('year', None)
         self.params.pop('variantCode', None)
 
-        resp = self.session.get('https://www.demon-tweeks.com/rest/V1/vehicles/makes', params=self.params)
-        data = resp.json()
-
+        data = self.get('https://www.demon-tweeks.com/rest/V1/vehicles/makes', self.params)
+        
         print json.dumps(data, indent=2)
         
         for d in data:
@@ -31,9 +71,8 @@ class DemonTweeksScraper(object):
         self.params.pop('modelCode', None)        
         self.params.pop('year', None)
         self.params.pop('variantCode', None)
-        
-        resp = self.session.get('https://www.demon-tweeks.com/rest/V1/vehicles/models', params=self.params)
-        data = resp.json()
+
+        data = self.get('https://www.demon-tweeks.com/rest/V1/vehicles/models', self.params)        
 
         for d in data:
             self.params['modelCode'] = d['code']            
@@ -42,9 +81,8 @@ class DemonTweeksScraper(object):
     def years(self):
         self.params.pop('year', None)        
         self.params.pop('variantCode', None)
-        
-        resp = self.session.get('https://www.demon-tweeks.com/rest/V1/vehicles/years', params=self.params)
-        data = resp.json()
+
+        data = self.get('https://www.demon-tweeks.com/rest/V1/vehicles/years', self.params) 
         
         for d in data:
             self.params['year'] = d['label']            
@@ -53,8 +91,7 @@ class DemonTweeksScraper(object):
     def variants(self):
         self.params.pop('variantCode', None)
         
-        resp = self.session.get('https://www.demon-tweeks.com/rest/V1/vehicles/variants', params=self.params)
-        data = resp.json()
+        data = self.get('https://www.demon-tweeks.com/rest/V1/vehicles/variants', self.params) 
         
         print json.dumps(data, indent=2)
         
@@ -65,9 +102,8 @@ class DemonTweeksScraper(object):
         #    yield v['label']
 
     def vehicles(self):
-        resp = self.session.get('https://www.demon-tweeks.com/rest/V1/vehicles/vehicle', params=self.params)
-        data = resp.json()
-
+        data = self.get('https://www.demon-tweeks.com/rest/V1/vehicles/vehicle', self.params)
+        
         for v in data:
             yield v
 
@@ -75,7 +111,7 @@ class DemonTweeksScraper(object):
         headers = [
             'typeCode', 'makeCode', 'modelCode', 'year', 'variants'
         ]
-        filename = 'demons-tweeks.csv'
+        filename = 'demons-tweeks-car.csv'
         
         with open(filename, 'w') as fp:
             writer = csv.writer(fp, quoting=csv.QUOTE_NONNUMERIC)
@@ -83,7 +119,7 @@ class DemonTweeksScraper(object):
 
             for d in data:
                 row = [
-                    d.get(h) for h in headers
+                    d.get(h).encode('utf8') for h in headers
                 ]
                 
                 writer.writerow(row) 
@@ -92,24 +128,18 @@ class DemonTweeksScraper(object):
         data = []
         
 #        for typeCode in ['car', 'motorcycle']:
-        for typeCode in ['motorcycle']:
+        for typeCode in ['car']:
             self.params['typeCode'] = typeCode
             for make in self.makes():
                 print make
-                time.sleep(0.5)
                 for model in self.models():
                     print model
-                    time.sleep(0.5)                    
                     for year in self.years():
                         print year
-                        time.sleep(0.5)
                         d = self.params.copy()
                         d['variants'] = '\n'.join( self.variants() )
                         data.append(d)
 
-
-                break
-        
         self.csv_save(data)
         
 if __name__ == '__main__':
